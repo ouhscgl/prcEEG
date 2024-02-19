@@ -1,7 +1,7 @@
 
 %% Dependencies
-% > edfread()
-% > eeglab()
+% > edfread() - mathworks.com/matlabcentral/fileexchange/31900-edfread (@02/18/24)
+% > eeglab()  - sccn.ucsd.edu/eeglab/downloadtoolbox.php (@02/18/24)
 % Written in MATLAB R2022a (2024).
 % Author: ZK
 
@@ -12,7 +12,10 @@
 % Example: root_dirx = 'C:\Users\user\test\' OR '' OR ' '
 
 % > eegl_locs: Location of the eeglab toolbox, required dependency.
-% Example: eeg_locs = 'C:\Users\user\test\eeglab2022.0'
+% Example: eeg_locs = 'C:\Users\user\test\eeglab2022.0\'
+
+% > edfr_locs: Location of the edfread script, required dependency.
+% Example: eeg_locs = 'C:\Users\user\test\'
 
 % > file_load: Main sub-directory where the input files are located,
 % required input. Defaults to searching current directory.
@@ -43,7 +46,7 @@
 
 % USER VARIABLES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 root_dirx = '';
-eegl_locs = 'C:\Users\user\test\eeglab2022.0';
+eegl_locs = 'G:\Projects\OUHSCgl\_exe\eeglab2023.1\';
 edfr_locs = '';
 file_load = [root_dirx, 'sample_data',filesep];
 fedf_save = [root_dirx, 'edf_data',filesep];
@@ -62,7 +65,7 @@ user_chan = {'AF3','F7','F3','FC5','T7','P7','O1','O2','P8','T8','FC6',...
 % management ______________________________________________________________
 if isempty(root_dirx)
     root_dirx = [cd, filesep];
-    file_load = [root_dirx, 'sel_data',filesep];
+    file_load = [root_dirx, 'sample_data',filesep];
     fedf_save = [root_dirx, 'edf_data',filesep];
     fset_save = [root_dirx, 'set_data',filesep];
     fmat_save = [root_dirx, 'mat_data',filesep];
@@ -100,7 +103,7 @@ if isempty(eegl_locs)
     return
 end
 addpath(eegl_locs)
-if ~isempty(eegl_locs)
+if ~isempty(edfr_locs)
     addpath(edfr_locs)
 end %______________________________________________________________________
 
@@ -232,15 +235,17 @@ for i=1:length(fileList)
         if ~exist(slc,'dir')
             mkdir(slc)
         end
-        pop_writeeeg(EEG,[slc,sfn],'TYPE','EDF')
+        pop_writeeeg(EEG,[slc,sfn],'TYPE','EDF');
         save_logs = [save_logs; string([slc,sfn])];
     end % _________________________________________________________________
     end % _________________________________________________________________
     end
 end
-% Finished
+% Finished ________________________________________________________________
 beep
 disp('Files have finished processing.')
+save('user_logs','debg_logs','load_logs','save_logs')
+% _________________________________________________________________________
 %% Error handling function - unclutterring main script
 function ErrorLog(errno, instc)
     global debg_logs
