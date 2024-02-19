@@ -48,10 +48,10 @@
 root_dirx = '';
 eegl_locs = 'G:\Projects\OUHSCgl\_exe\eeglab2023.1\';
 edfr_locs = '';
-file_load = [root_dirx, 'sample_data',filesep];
-fedf_save = [root_dirx, 'edf_data',filesep];
-fset_save = [root_dirx, 'set_data',filesep];
-fmat_save = [root_dirx, 'mat_data',filesep];
+file_load = 'sample_data';
+fedf_save = 'edf_data';
+fset_save = 'set_data';
+fmat_save = 'mat_data';
 adds_appx = '_segment_';
 mrkr_chan = 21;
 samp_freq = 256;
@@ -65,10 +65,10 @@ user_chan = {'AF3','F7','F3','FC5','T7','P7','O1','O2','P8','T8','FC6',...
 % management ______________________________________________________________
 if isempty(root_dirx)
     root_dirx = [cd, filesep];
-    file_load = [root_dirx, 'sample_data',filesep];
-    fedf_save = [root_dirx, 'edf_data',filesep];
-    fset_save = [root_dirx, 'set_data',filesep];
-    fmat_save = [root_dirx, 'mat_data',filesep];
+    file_load = [root_dirx, file_load,filesep];
+    fedf_save = [root_dirx, fedf_save,filesep];
+    fset_save = [root_dirx, fset_save,filesep];
+    fmat_save = [root_dirx, fmat_save,filesep];
 end
 fileList = dir(fullfile(file_load,'**','*.edf'));
 if isempty(fileList)
