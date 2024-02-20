@@ -32,9 +32,6 @@
 % > mrkr_chan: Index of marker channel.
 % Example: 21
 
-% > samp_freq: Sampling frequency of the dataset.
-% Example: 256
-
 % > task_lens: Define in case of requiring specific lengths of data.
 % Defaults to extracting between markers.
 % Example: 72 OR ''
@@ -48,14 +45,13 @@
 root_dirx = '';
 eegl_locs = 'G:\Projects\OUHSCgl\_exe\eeglab2023.1\';
 edfr_locs = '';
-file_load = [root_dirx, 'sample_data',filesep];
-fedf_save = [root_dirx, 'edf_data',filesep];
-fset_save = [root_dirx, 'set_data',filesep];
-fmat_save = [root_dirx, 'mat_data',filesep];
-adds_appx = '_segment_';
-mrkr_chan = 21;
-samp_freq = 256;
-task_lens = 30;
+file_load = 'sample_data';
+fedf_save = 'seg\edf_data';
+fset_save = 'seg\set_data';
+fmat_save = 'seg\mat_data';
+adds_appx = '_seg_';
+mrkr_chan = 23;
+task_lens = '';
 user_chan = {'AF3','F7','F3','FC5','T7','P7','O1','O2','P8','T8','FC6',...
              'F4','F8','AF4'};
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -65,19 +61,15 @@ user_chan = {'AF3','F7','F3','FC5','T7','P7','O1','O2','P8','T8','FC6',...
 % management ______________________________________________________________
 if isempty(root_dirx)
     root_dirx = [cd, filesep];
-    file_load = [root_dirx, 'sample_data',filesep];
-    fedf_save = [root_dirx, 'edf_data',filesep];
-    fset_save = [root_dirx, 'set_data',filesep];
-    fmat_save = [root_dirx, 'mat_data',filesep];
 end
+file_load = [root_dirx, file_load, filesep];
+fedf_save = [root_dirx, fedf_save, filesep];
+fset_save = [root_dirx, fset_save, filesep];
+fmat_save = [root_dirx, fmat_save, filesep];
+
 fileList = dir(fullfile(file_load,'**','*.edf'));
 if isempty(fileList)
     ErrorLog(1, fullfile(file_load,'**','*.edf'));
-    return
-end
-% Error handle sampling frequency
-if isempty(samp_freq) || ~isa(samp_freq,'double')
-    ErrorLog(7, 'samp_freq');
     return
 end
 % Error handle task length
@@ -121,10 +113,15 @@ global debg_logs, global load_logs, global save_logs
 for i=1:length(fileList)
 
     % Load in data file, extract markers __________________________________
-    fname_in  = [fileList(i).folder, filesep ,fileList(i).name];
+    fname_in  = [fileList(i).folder, filesep, fileList(i).name];
+    temp_a = dir(fullfile([fileList(i).folder, filesep, '*markr.mat'])); % MARKER WORD!
+    markr_in  = [fileList(i).folder, filesep, temp_a.name];
+    clear temp_a
     load_logs = [load_logs; string(fname_in)];
+    
     try
         [hdr,rec] = edfread(fname_in);
+        sfr = hdr.samples(1);
     catch
          ErrorLog(5, fileList(i).name);
          continue
@@ -134,60 +131,51 @@ for i=1:length(fileList)
         ErrorLog(6, fileList(i).name);
         continue
     end
-    mrk = find(rec(mrkr_chan,:));
-    % _____________________________________________________________________
-    
-    % Identify the number of markers contained in the dataset [0 or X] ____
-    switch size(mrk,1)
-        case 0
-            ErrorLog(1, fileList(i).name);
-            scd = cell(1,1);
-            seq = zeros(1,3);
-        otherwise
-            scd = cell(length(mrk),1);
-            seq = zeros(length(mrk)-1,3);
-    end % _________________________________________________________________
     
     % Identify the mode of segmentation [lengthwise or between markers] ___
     ile = ~isempty(task_lens);
     % _____________________________________________________________________
 
-    % Extract sequences ___________________________________________________
-    switch length(mrk)
-        case 0
-            ErrorLog(2, fileList(i).name);
-            seq    = [1, size(rec,2), 1+task_lens*samp_freq];
-            scd{1} = rec(:,1:seq(2+ile));
-        case 1
-            ErrorLog(3, fileList(i).name);
-            seq    = [mrk(1), size(rec,2), mrk(1)+task_lens*samp_freq];
-            scd{1} = rec(:,mrk(1):seq(2+ile));
-        otherwise
-            for o=1:length(mrk)-1+ile
-                seq(o,:) = [mrk(o), mrk(min(o+1,length(mrk))), ...
-                            mrk(o)+task_lens*samp_freq];
-                
-                % ErrorHandle: Data len too low for fixed length segments
-                if ile == 1 && size(rec,2) < seq(o,2+ile)
-                    ErrorLog(4,[fileList(i).name,' segment: ',num2str(o)]);
-                    seq(o,2+ile) = size(rec,2);
+    % Identify the number of markers contained in the dataset [0 or X] ____
+    if ~isempty(mrkr_chan)
+        mrk = find(rec(mrkr_chan,:));
+        switch size(mrk,1)
+            case 1
+                if isempty(mrk)
+                    ErrorLog(2, fileList(i).name);
+                    scd = cell(1,1);
+                    mrk      = [1,...
+                                size(rec,2),...
+                                (1+task_lens*sfr)*ile];
+                    scd{1} = rec(:,mrk(1):mrk(2+ile));
+                else
+                    ErrorLog(3, fileList(i).name);
+                    scd = cell(1,1);
+                    mrk      = [mrk(1),...
+                                size(rec,2),...
+                                (mrk(1)+task_lens*sfr)*ile];
+                    scd{1} = rec(:,mrk(1):mrk(2+ile));
                 end
-                
-                scd{o} = rec(:,seq(o,1):seq(o,2+ile));
-            end
-    end % _________________________________________________________________
+            otherwise
+                scd = cell(size(mrk,1),1);
+                for p=1:size(mrk,1)
+                mrk(p,:) = [mrk(p),...
+                            mrk(min(p+1,length(mrk))),...
+                            (mrk(p)+task_lens*sfr)*ile];
+                scd{p} = rec(:,mrk(1):mrk(2+ile));
+                end
+        end 
+    else
+        mrk = load(markr_in);
+        scd = cell(size(mrk,1),1);
+    end
+    % _____________________________________________________________________
     
     % Single file loop >>> Save data
     for o=1:length(scd)
         
     % Save .mat file if save path is given ________________________________
     if ~isempty(fmat_save)
-        slc = append(fmat_save, ...
-          strrep(fileList(i).folder, file_load, ''),filesep);
-        sfn=[fileList(i).name(1:end-4),adds_appx,sprintf('%02d',o),'.mat'];
-        if ~exist(slc,'dir')
-            mkdir(slc)
-        end
         segm_data = scd{o};
         
         if ~isempty(user_chan)
@@ -199,44 +187,34 @@ for i=1:length(fileList)
             end
             segm_data = segm_data(idx,:);
         end
-
-        save([slc,sfn],'segm_data')
-        save_logs = [save_logs; string([slc,sfn])];
+        
+        SaveData(fileList(i),file_load,fmat_save,...
+            struct('segm_data',segm_data),'.mat',...
+            [adds_appx,sprintf('%02d',o)])
     end % _________________________________________________________________
     
     % Run EEGLab if either .set or .edf data is required as output ________
     if ~isempty(fset_save) || ~isempty(fedf_save)
         EEG = pop_biosig(fname_in,'blockrange',...
-              [floor(seq(o,1)/samp_freq) floor(seq(o,2+ile)/samp_freq)]);
-        [ALLEEG EEG CURRENTSET] = pop_newset(ALLEEG, EEG, 0,'gui','off');
+              [floor(mrk(o,1)/sfr) floor(mrk(o,2+ile)/sfr)]);
         if ~isempty(user_chan)
             EEG = pop_select( EEG, 'channel',user_chan);
         end
-        [ALLEEG EEG CURRENTSET] = pop_newset(ALLEEG, EEG, 1,'gui','off');
+        [ALLEEG EEG CURRENTSET] = pop_newset(ALLEEG, EEG, 0,'gui','off');
         EEG = eeg_checkset( EEG );
         
     % Save .set file if save path is given ________________________________
     if ~isempty(fset_save)
-        slc = append(fset_save, ...
-              strrep(fileList(i).folder, file_load, ''),filesep);
-        sfn=[fileList(i).name(1:end-4),adds_appx,sprintf('%02d',o) '.set'];
-        if ~exist(slc,'dir')
-            mkdir(slc)
-        end
-        EEG = pop_saveset( EEG, 'filename',sfn,'filepath',slc);
-        save_logs = [save_logs; string([slc,sfn])];
+        SaveData(fileList(i),file_load,fset_save,...
+            EEG,'.set',...
+            [adds_appx,sprintf('%02d',o)])
     end % _________________________________________________________________
         
     % Save .edf file if save path is given ________________________________
     if ~isempty(fedf_save)           
-        slc = append(fedf_save, ...
-              strrep(fileList(i).folder, file_load, ''),filesep);
-        sfn=[fileList(i).name(1:end-4),adds_appx,sprintf('%02d',o) '.edf'];
-        if ~exist(slc,'dir')
-            mkdir(slc)
-        end
-        pop_writeeeg(EEG,[slc,sfn],'TYPE','EDF');
-        save_logs = [save_logs; string([slc,sfn])];
+        SaveData(fileList(i),file_load,fedf_save,...
+            EEG,'.edf',...
+            [adds_appx,sprintf('%02d',o)])
     end % _________________________________________________________________
     end % _________________________________________________________________
     end
@@ -246,6 +224,25 @@ beep
 disp('Files have finished processing.')
 save('user_logs','debg_logs','load_logs','save_logs')
 % _________________________________________________________________________
+%% Save function - unclutterring main script
+function SaveData(fileList,path_main,path_curr,data,type,adds_appx)
+    global save_logs         
+    slc = append(path_curr, ...
+                 strrep(fileList.folder, path_main, ''),filesep);
+    sfn=[fileList.name(1:end-4),adds_appx,type];
+    if ~exist(slc,'dir')
+        mkdir(slc);
+    end
+    if      type == ".mat"
+        save(fullfile(slc,sfn),'-struct','data');
+    elseif  type == ".edf"
+        pop_writeeeg(data,[slc,sfn],'TYPE','EDF');
+    elseif  type == ".set"
+        EEG = pop_saveset( data, 'filename',sfn,'filepath',slc);
+    end
+    save_logs(end+1,1) = string([slc,sfn]);
+    disp(['Saved ',slc,sfn,'.'])
+end
 %% Error handling function - unclutterring main script
 function ErrorLog(errno, instc)
     global debg_logs
