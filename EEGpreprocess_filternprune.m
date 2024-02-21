@@ -49,16 +49,16 @@
 %           'F4','F8','AF4'};
 
 % USER VARIABLES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-root_dirx = '';
-eegl_locs = 'G:\Projects\OUHSCgl\_exe\eeglab2023.1\';
+root_dirx = 'C:\Projects\CID\';
+eegl_locs = 'C:\Projects\_extensions\eeglab2023.1\';
 chan_locs = 'plugins\\dipfit\\standard_BEM\\elec\\standard_1005.elc';
-file_load = 'set_data';
+file_load = 'seg\set_data';
 
-comp_save = 'set\pruned_cmp_data';
-vlla_save = 'set\unpruneica_data';
-fedf_save = 'set\pruned_edf_data';
-fset_save = 'set\pruned_set_data';
-fmat_save = 'set\pruned_mat_data';
+comp_save = 'fnp\pruned_cmp_data';
+vlla_save = 'fnp\unpruneica_data';
+fedf_save = 'fnp\pruned_edf_data';
+fset_save = 'fnp\pruned_set_data';
+fmat_save = 'fnp\pruned_mat_data';
 
 artx_rejt = ['ICLABEL','MARA','ADJUST'];
 save_type = ['EDF','SET','MAT'];
@@ -223,11 +223,11 @@ for i=1:length(fileList)
         ErrorLog(9,fname_in)
         continue
     end
-    EEG = pop_subcomp( EEG, labl_rica, 0);
-    EEG = eeg_checkset( EEG );
-    [ALLEEG EEG CURRENTSET] = pop_newset(ALLEEG, EEG, 1,'gui','off',...
+    EEG_icl = pop_subcomp( EEG, labl_rica, 0);
+    EEG_icl = eeg_checkset( EEG_icl );
+    [ALLEEG EEG_icl CURRENTSET] = pop_newset(ALLEEG, EEG_icl, 1,'gui','off',...
                               'setname','After pruned with ICLabel');
-    temp_lbl = zeros(EEG.nbchan,1);
+    temp_lbl = zeros(EEG_icl.nbchan,1);
     temp_lbl(labl_rica) = 1;
     labl_rica = temp_lbl;
     clear temp_lbl
@@ -236,7 +236,7 @@ for i=1:length(fileList)
     % Save processed set __________________________________________________
     % Save .mat [iclabel] : [labels], [dataset] for further processing
     if sdt(3)
-        data_rica = EEG.data;
+        data_rica = EEG_icl.data;
         SaveData(fileList(i),file_load,fmat_save,...
             struct('data_rica',data_rica,'labl_rica',labl_rica),...
             '.mat','_iclabel')
@@ -244,18 +244,18 @@ for i=1:length(fileList)
     
     % Save .set [iclabel]: [dataset] for future processing ________________
     if sdt(2)
-        SaveData(fileList(i),file_load,fset_save,EEG,'.set','_iclabel')
+        SaveData(fileList(i),file_load,fset_save,EEG_icl,'.set','_iclabel')
     end % _________________________________________________________________
 
     % Save .edf [iclabel]: [dataset] for future processing ________________
     if sdt(1)
-        SaveData(fileList(i),file_load,fedf_save,EEG,'.edf','_iclabel')
+        SaveData(fileList(i),file_load,fedf_save,EEG_icl,'.edf','_iclabel')
     end % _________________________________________________________________
     
     % USERLOG _____________________________________________________________
     save_logs(end,2)                     = num2str(sum(labl_rica));
     if ~isempty(labl_rica)
-    save_logs(end,3:2+EEG.nbchan) = labl_rica;
+    save_logs(end,3:2+EEG_icl.nbchan) = labl_rica;
     end
     disp(['ICLabel: Removed ',num2str(sum(labl_rica)),' components.'])
     % _____________________________________________________________________
@@ -263,10 +263,15 @@ for i=1:length(fileList)
     % #####################################################################
     % Method2: MARA
     if rem(2)
-    [ALLEEG EEG CURRENTSET] = pop_newset(ALLEEG, EEG, 2,...
-        'retrieve',1,'study',0);
+    [ALLEEG EEG CURRENTSET] = pop_newset(ALLEEG, EEG, 1,'gui','off',...
+                              'setname','Before pruned with MARA');
     [ALLEEG EEG CURRENTSET] = processMARA ( ALLEEG,EEG,CURRENTSET );
-    labl_mara = EEG.reject.gcompreject;
+    if sum(EEG.reject.gcompreject) ~= EEG.nbchan
+        labl_mara = EEG.reject.gcompreject;
+    else
+        ErrorLog(10,' ')
+        continue
+    end
     EEG = pop_subcomp( EEG, [], 0);
     [ALLEEG EEG CURRENTSET] = pop_newset(ALLEEG, EEG, 3,'gui','off',...
                               'setname','After pruned with MARA');
@@ -340,7 +345,8 @@ function ErrorLog(errno, instc)
                   'ERROR: User specified marker channel index is out of bounds. Check data dimensions.',...
                   'ERROR: Please provide valid variable value. Refer to user instructions when needed.',...
                   'WARNING: ADJUST has not been implemented.',...
-                  'ERROR: All components rejected. Skipping analysis.'
+                  'ERROR: All components rejected. Skipping analysis.',...
+                  'WARNING: MARA rejected all components, skipping...'
                  };
     error = [error_list{errno},' @ ',char(instc)];
     disp(error)

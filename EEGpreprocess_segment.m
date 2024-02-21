@@ -42,10 +42,10 @@
 %           'F4','F8','AF4'};
 
 % USER VARIABLES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-root_dirx = '';
-eegl_locs = 'G:\Projects\OUHSCgl\_exe\eeglab2023.1\';
-edfr_locs = '';
-file_load = 'sample_data';
+root_dirx = 'C:\Projects\CID\';
+eegl_locs = 'C:\Projects\_extensions\eeglab2023.1\';
+edfr_locs = 'C:\Projects\_extensions\';
+file_load = 'mrk_data';
 fedf_save = 'seg\edf_data';
 fset_save = 'seg\set_data';
 fmat_save = 'seg\mat_data';
@@ -138,7 +138,7 @@ for i=1:length(fileList)
     end
     
     % Identify the mode of segmentation [lengthwise or between markers] ___
-    ile = ~isempty(task_lens);
+    ile = isempty(task_lens);
     % _____________________________________________________________________
 
     % Identify the number of markers contained in the dataset [0 or X] ____
@@ -171,8 +171,12 @@ for i=1:length(fileList)
                 end
         end 
     else
-        mrk = load(markr_in);
+        load(markr_in)
+        mrk = mrkr_data;
         scd = cell(size(mrk,1),1);
+        for p=1:size(mrk,1)
+        scd{p} = rec(:,mrk(1):mrk(2+ile));
+        end
     end
     % _____________________________________________________________________
     
