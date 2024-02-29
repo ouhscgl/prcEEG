@@ -4,10 +4,11 @@
 
 %% User variables
 % USER VARIABLES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-root_dirx = 'C:\Projects\CID\';
-file_load = 'raw_data';
+root_dirx = 'G:\Projects\OUHSCgl\prcEEG\';
+file_load = 'sample_data';
 fedf_save = 'mrk_data';
 samp_freq = 128;
+mark_chan = 23;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% Environment variables, user error handling
@@ -52,8 +53,8 @@ for i=1:length(fileList)
     end
 
     srq = [1,3,25];
-    mrk = find(rec(26,:));
-    val = rec(26,mrk);
+    mrk = find(rec(mark_chan,:));
+    val = rec(mark_chan,mrk);
     
     switch length(mrk)
         case 0

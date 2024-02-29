@@ -1,6 +1,8 @@
 
 %% Dependencies
 % > eeglab()  - sccn.ucsd.edu/eeglab/downloadtoolbox.php (@02/18/24)
+% > mdc_savedata() - included
+% > mdc_errorlog() - included
 % > (optional) MARA() - github.com/irenne/MARA           (@02/18/24)
 % > (optional) ADJUST() - nitrc.org/projects/adjust/     (@02/18/24)
 % > (optional) EEGHEADER_FAUX.mat - github.com/ouhscgl/prcEEG 
@@ -49,8 +51,9 @@
 %           'F4','F8','AF4'};
 
 % USER VARIABLES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-root_dirx = 'C:\Projects\CID\';
-eegl_locs = 'C:\Projects\_extensions\eeglab2023.1\';
+root_dirx = 'G:\Projects\OUHSCgl\prcEEG\';
+edfr_locs = 'G:\Projects\OUHSCgl\_exe\';
+eegl_locs = 'G:\Projects\OUHSCgl\_exe\eeglab2023.1\';
 chan_locs = 'plugins\\dipfit\\standard_BEM\\elec\\standard_1005.elc';
 file_load = 'seg\set_data';
 
@@ -72,12 +75,14 @@ higp_filt = 45;
 
 %% Environment variables, user error handling
 % Addition of files to workspace, initial user error handling and file
+[debg_logs, save_logs, load_logs] = deal("","","");
 % Add paths of dependecies to workspace ___________________________________
 if isempty(eegl_locs)
-    ErrorLog(1, 'eegl_locs');
+    debg_logs(end+1,1) = mdc_errorlog(1, 'eegl_locs');
     return
 end
 addpath(eegl_locs)
+addpath(edfr_locs)
 % _________________________________________________________________________
 
 % Add file access paths to workspace ______________________________________
@@ -96,16 +101,11 @@ fmat_save = [root_dirx, fmat_save,filesep];
 temp_ptv = ['*.',lower(load_type)];
 fileList = dir(fullfile(file_load,'**',temp_ptv));
 if isempty(fileList)
-    ErrorLog(1, fullfile(file_load,'**',temp_ptv));
+    debg_logs(end+1,1)= mdc_errorlog(1, fullfile(file_load,'**',temp_ptv));
     return
 end
 clear temp_ptv
 % _________________________________________________________________________
-
-% Add debug logs __________________________________________________________
-global debg_logs, global load_logs, global save_logs
-[debg_logs, load_logs, save_logs] = deal("","","");
-%__________________________________________________________________________
 
 % Initialize EEGLab _______________________________________________________
 [ALLEEG EEG CURRENTSET ALLCOM] = eeglab;
@@ -128,7 +128,7 @@ if rem(2) && load_type == "MAT"
     try
     load(faux_eegs)
     catch
-    ErrorLog(1, 'faux_eegs');
+    debg_logs(end+1,1) = mdc_errorlog(1, 'faux_eegs');
     return
     end
 end
@@ -149,13 +149,13 @@ for i=1:length(fileList)
             EEG.data  = load(fname_in);
             EEG.times = 1:1000/EEG.rate:size(EEG.data,2)*1000/EEG.rate;
             catch
-            ErrorLog(1, 'mat file');   
+            debg_logs(end+1,1) = mdc_errorlog(1, 'mat file');   
             end
         case "SET"
             EEG = pop_loadset('filename',fileList(i).name,...
                   'filepath',[fileList(i).folder, filesep]);
         otherwise
-            ErrorLog(1, 'save_type'); 
+            debg_logs(end+1,1) = mdc_errorlog(1, 'save_type'); 
             return
     end % _________________________________________________________________
 
@@ -192,7 +192,8 @@ for i=1:length(fileList)
     
     % Save [dataset] after ICA and labeling for future reference __________
     if save_vlla
-    SaveData(fileList(i),file_load,vlla_save,EEG,'.set','_postica')
+    save_logs(end+1,1)= mdc_savedata(fileList(i),file_load,...
+                            vlla_save,EEG,'.set','_postica');
     end % _________________________________________________________________
     
     % Save [component] : [labels],[dataset] for future reference __________
@@ -204,9 +205,11 @@ for i=1:length(fileList)
     end
     % MSE of operation is ~5.2e-05
     data_comp = (EEG.icaweights*EEG.icasphere)*EEG.data;
-    SaveData(fileList(i),file_load,comp_save,...
-        struct('data_comp',data_comp,'labl_comp',labl_comp),...
-        '.mat','_iclabel')
+    save_logs(end+1,1)= mdc_savedata(fileList(i),file_load,...
+                            comp_save,...
+                            struct('data_comp',data_comp,...
+                                   'labl_comp',labl_comp),...
+                            '.mat','_iclabel');
     end
     % _____________________________________________________________________
     % NEEDS REVISION FROM INDEX TO PURE
@@ -220,13 +223,14 @@ for i=1:length(fileList)
         end
     end
     if length(labl_rica) == EEG.nbchan
-        ErrorLog(9,fname_in)
+        debg_logs(end+1,1) = mdc_errorlog(9,fname_in);
         continue
     end
     EEG_icl = pop_subcomp( EEG, labl_rica, 0);
     EEG_icl = eeg_checkset( EEG_icl );
-    [ALLEEG EEG_icl CURRENTSET] = pop_newset(ALLEEG, EEG_icl, 1,'gui','off',...
-                              'setname','After pruned with ICLabel');
+    [ALLEEG EEG_icl CURRENTSET] = pop_newset(ALLEEG, EEG_icl, 1,...
+                                    'gui','off',...
+                                    'setname','After pruned with ICLabel');
     temp_lbl = zeros(EEG_icl.nbchan,1);
     temp_lbl(labl_rica) = 1;
     labl_rica = temp_lbl;
@@ -237,19 +241,23 @@ for i=1:length(fileList)
     % Save .mat [iclabel] : [labels], [dataset] for further processing
     if sdt(3)
         data_rica = EEG_icl.data;
-        SaveData(fileList(i),file_load,fmat_save,...
-            struct('data_rica',data_rica,'labl_rica',labl_rica),...
-            '.mat','_iclabel')
+        save_logs(end+1,1)= mdc_savedata(fileList(i),file_load,...
+                                fmat_save,...
+                                struct('data_rica',data_rica,...
+                                       'labl_rica',labl_rica),...
+                                '.mat','_iclabel');
     end
     
     % Save .set [iclabel]: [dataset] for future processing ________________
     if sdt(2)
-        SaveData(fileList(i),file_load,fset_save,EEG_icl,'.set','_iclabel')
+        save_logs(end+1,1)= mdc_savedata(fileList(i),file_load,...
+                                fset_save,EEG_icl,'.set','_iclabel');
     end % _________________________________________________________________
 
     % Save .edf [iclabel]: [dataset] for future processing ________________
     if sdt(1)
-        SaveData(fileList(i),file_load,fedf_save,EEG_icl,'.edf','_iclabel')
+        save_logs(end+1,1)= mdc_savedata(fileList(i),file_load,...
+                                fedf_save,EEG_icl,'.edf','_iclabel');
     end % _________________________________________________________________
     
     % USERLOG _____________________________________________________________
@@ -269,7 +277,7 @@ for i=1:length(fileList)
     if sum(EEG.reject.gcompreject) ~= EEG.nbchan
         labl_mara = EEG.reject.gcompreject;
     else
-        ErrorLog(10,' ')
+        debg_logs(end+1,1) = mdc_errorlog(10,' ');
         continue
     end
     EEG = pop_subcomp( EEG, [], 0);
@@ -279,19 +287,23 @@ for i=1:length(fileList)
     % Save .mat [mara] : [labels], [dataset] for further processing
     if sdt(3)
         data_mara = EEG.data;
-        SaveData(fileList(i),file_load,fmat_save,...
-            struct('data_mara',data_mara,'labl_mara',labl_mara),...
-            '.mat','_icamara')
+        save_logs(end+1,1)= mdc_savedata(fileList(i),file_load,...
+                                fmat_save,...
+                                struct('data_mara',data_mara,...
+                                       'labl_mara',labl_mara),...
+                                '.mat','_icamara');
     end
     
     % Save .set [iclabel]: [dataset] for future processing ________________
     if sdt(2)
-        SaveData(fileList(i),file_load,fset_save,EEG,'.set','_icamara')
+        save_logs(end+1,1)= mdc_savedata(fileList(i),file_load,...
+                                fset_save,EEG,'.set','_icamara');
     end % _________________________________________________________________
 
     % Save .edf [iclabel]: [dataset] for future processing ________________
     if sdt(1)
-        SaveData(fileList(i),file_load,fedf_save,EEG,'.edf','_icamara')
+        save_logs(end+1,1)= mdc_savedata(fileList(i),file_load,...
+                                fedf_save,EEG,'.edf','_icamara');
     end % _________________________________________________________________
     
     % USERLOG _____________________________________________________________
@@ -306,7 +318,8 @@ for i=1:length(fileList)
     % Method3: ADJUST
     if rem(3)
         % Can't be automated, doesn't work.
-        ErrorLog(8,' Please select a different artifact rejection method.')
+        debg_logs(end+1,1) = mdc_errorlog(8,...
+            ' Please select a different artifact rejection method.');
     end
     % #####################################################################
 end
@@ -315,41 +328,3 @@ beep
 disp('Files have finished processing.')
 save('user_logs','debg_logs','load_logs','save_logs')
 % _________________________________________________________________________
-%% Save function - unclutterring main script
-function SaveData(fileList,path_main,path_curr,data,type,adds_appx)
-    global save_logs         
-    slc = append(path_curr, ...
-                 strrep(fileList.folder, path_main, ''),filesep);
-    sfn=[fileList.name(1:end-4),adds_appx,type];
-    if ~exist(slc,'dir')
-        mkdir(slc);
-    end
-    if      type == ".mat"
-        save(fullfile(slc,sfn),'-struct','data');
-    elseif  type == ".edf"
-        pop_writeeeg(data,[slc,sfn],'TYPE','EDF');
-    elseif  type == ".set"
-        EEG = pop_saveset( data, 'filename',sfn,'filepath',slc);
-    end
-    save_logs(end+1,1) = string([slc,sfn]);
-    disp(['Saved ',slc,sfn,'.'])
-end
-%% Error handling function - unclutterring main script
-function ErrorLog(errno, instc)
-    global debg_logs
-    error_list = {'ERROR: No files exist in specified location that match criteria.',...
-                  'ERROR: No markers exist in the specified file. Logged, continuing as fullfile.',...
-                  'ERROR: Only a single marker exists in the specified file. Logged, continuing as fullfile.',...
-                  'ERROR: Segment length smaller than expected. Logged, continuing with remainder of the file.',...
-                  'ERROR: EDF file could not be loaded.',...
-                  'ERROR: User specified marker channel index is out of bounds. Check data dimensions.',...
-                  'ERROR: Please provide valid variable value. Refer to user instructions when needed.',...
-                  'WARNING: ADJUST has not been implemented.',...
-                  'ERROR: All components rejected. Skipping analysis.',...
-                  'WARNING: MARA rejected all components, skipping...'
-                 };
-    error = [error_list{errno},' @ ',char(instc)];
-    disp(error)
-    debg_logs = [debg_logs;string(error)];
-    return 
-end

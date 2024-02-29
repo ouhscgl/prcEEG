@@ -2,6 +2,8 @@
 %% Dependencies
 % > edfread() - mathworks.com/matlabcentral/fileexchange/31900-edfread (@02/18/24)
 % > eeglab()  - sccn.ucsd.edu/eeglab/downloadtoolbox.php (@02/18/24)
+% > mdc_errorlog() - included
+% > mdc_savedata() - included
 % Written in MATLAB R2022a (2024).
 % Author: ZK
 
@@ -42,16 +44,16 @@
 %           'F4','F8','AF4'};
 
 % USER VARIABLES %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-root_dirx = 'C:\Projects\CID\';
-eegl_locs = 'C:\Projects\_extensions\eeglab2023.1\';
-edfr_locs = 'C:\Projects\_extensions\';
-file_load = 'mrk_data';
+root_dirx = 'G:\Projects\OUHSCgl\prcEEG\';
+eegl_locs = 'G:\Projects\OUHSCgl\_exe\eeglab2023.1\';
+edfr_locs = 'G:\Projects\OUHSCgl\_exe\';
+file_load = 'sample_data';
 fedf_save = 'seg\edf_data';
 fset_save = 'seg\set_data';
 fmat_save = 'seg\mat_data';
 adds_appx = '_seg_';
-mrkr_chan = '';
-task_lens = '';
+mrkr_chan = '23';
+task_lens = '30';
 user_chan = {'AF3','F7','F3','FC5','T7','P7','O1','O2','P8','T8','FC6',...
              'F4','F8','AF4'};
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -59,6 +61,7 @@ user_chan = {'AF3','F7','F3','FC5','T7','P7','O1','O2','P8','T8','FC6',...
 %% Environment variables, user error handling
 % Addition of files to workspace, initial user error handling and file
 % management ______________________________________________________________
+debg_logs = "";
 if isempty(root_dirx)
     root_dirx = [cd, filesep];
 end
@@ -69,30 +72,34 @@ fmat_save = [root_dirx, fmat_save, filesep];
 
 fileList = dir(fullfile(file_load,'**','*.edf'));
 if isempty(fileList)
-    ErrorLog(1, fullfile(file_load,'**','*.edf'));
+    debg_logs(end+1,1) = mdc_errorlog(1, fullfile(file_load,'**','*.edf'));
     return
 end
 % Error handle task length
 if ~isempty(task_lens) && ~isa(task_lens,'char')
-    ErrorLog(7, 'task_lens');
+    debg_logs(end+1,1) = mdc_errorlog(7, 'task_lens');
     return
 end
-task_lens = str2double(task_lens);
+if ~isempty(task_lens)
+    task_lens = str2double(task_lens);
+end
+if ~isempty(mrkr_chan)
+    mrkr_chan = str2double(mrkr_chan);
+end
 % Error handle extract channels
 if ~isempty(user_chan) && ~isa(user_chan,'cell')
-    ErrorLog(7, 'user_chan');
+    debg_logs(end+1,1) = mdc_errorlog(7, 'user_chan');
     return
 end
 % Error handle file paths
 if ~isa(root_dirx,'char') || ~isa(eegl_locs,'char') || ...
    ~isa(file_load,'char') || ~isa(fedf_save,'char') || ...
    ~isa(fset_save,'char') || ~isa(fmat_save,'char')
-    ErrorLog(7, 'File paths.');
+    debg_logs(end+1,1) = mdc_errorlog(7, 'File paths.');
 end %______________________________________________________________________
-
 % Add paths of dependecies to workspace ___________________________________
 if isempty(eegl_locs)
-    ErrorLog(1, 'eegl_locs');
+    debg_logs(end+1,1) = mdc_errorlog(1, 'eegl_locs');
     return
 end
 addpath(eegl_locs)
@@ -101,7 +108,6 @@ if ~isempty(edfr_locs)
 end %______________________________________________________________________
 
 % Add debug logs __________________________________________________________
-global debg_logs, global load_logs, global save_logs
 [debg_logs, load_logs, save_logs] = deal("","","");
 %__________________________________________________________________________
 
@@ -119,8 +125,6 @@ for i=1:length(fileList)
         temp_a = dir(fullfile([fileList(i).folder, filesep, '*.mat']));
         markr_in  = [fileList(i).folder, filesep, temp_a.name];
         clear temp_a
-    else
-        mrkr_chan = str2double(mrkr_chan);
     end
     load_logs = [load_logs; string(fname_in)];
     
@@ -128,12 +132,12 @@ for i=1:length(fileList)
         [hdr,rec] = edfread(fname_in);
         sfr = hdr.samples(1);
     catch
-         ErrorLog(5, fileList(i).name);
+         debg_logs(end+1,1) = mdc_errorlog(5, fileList(i).name);
          continue
     end
     
     if mrkr_chan > size(rec,1)
-        ErrorLog(6, fileList(i).name);
+        debg_logs(end+1,1) = mdc_errorlog(6, fileList(i).name);
         continue
     end
     
@@ -147,14 +151,14 @@ for i=1:length(fileList)
         switch size(mrk,1)
             case 1
                 if isempty(mrk)
-                    ErrorLog(2, fileList(i).name);
+                    debg_logs(end+1,1) = mdc_errorlog(2, fileList(i).name);
                     scd = cell(1,1);
                     mrk      = [1,...
                                 size(rec,2),...
                                 (1+task_lens*sfr)*ile];
                     scd{1} = rec(:,mrk(1):mrk(2+ile));
                 else
-                    ErrorLog(3, fileList(i).name);
+                    debg_logs(end+1,1) = mdc_errorlog(3, fileList(i).name);
                     scd = cell(1,1);
                     mrk      = [mrk(1),...
                                 size(rec,2),...
@@ -197,9 +201,10 @@ for i=1:length(fileList)
             segm_data = segm_data(idx,:);
         end
         
-        SaveData(fileList(i),file_load,fmat_save,...
-            struct('segm_data',segm_data),'.mat',...
-            [adds_appx,sprintf('%02d',o)])
+        save_logs(end+1,1)= mdc_savedata(fileList(i),file_load,...
+                                fmat_save,struct('segm_data',segm_data),...
+                                '.mat',...
+                                [adds_appx,sprintf('%02d',o)]);
     end % _________________________________________________________________
     
     % Run EEGLab if either .set or .edf data is required as output ________
@@ -214,16 +219,16 @@ for i=1:length(fileList)
         
     % Save .set file if save path is given ________________________________
     if ~isempty(fset_save)
-        SaveData(fileList(i),file_load,fset_save,...
-            EEG,'.set',...
-            [adds_appx,sprintf('%02d',o)])
+        save_logs(end+1,1)= mdc_savedata(fileList(i),file_load,...
+                                fset_save,EEG,'.set',...
+                                [adds_appx,sprintf('%02d',o)]);
     end % _________________________________________________________________
         
     % Save .edf file if save path is given ________________________________
     if ~isempty(fedf_save)           
-        SaveData(fileList(i),file_load,fedf_save,...
-            EEG,'.edf',...
-            [adds_appx,sprintf('%02d',o)])
+        save_logs(end+1,1)= mdc_savedata(fileList(i),file_load,...
+                                fedf_save,EEG,'.edf',...
+                                [adds_appx,sprintf('%02d',o)]);
     end % _________________________________________________________________
     end % _________________________________________________________________
     end
@@ -233,38 +238,3 @@ beep
 disp('Files have finished processing.')
 save('user_logs','debg_logs','load_logs','save_logs')
 % _________________________________________________________________________
-%% Save function - unclutterring main script
-function SaveData(fileList,path_main,path_curr,data,type,adds_appx)
-    global save_logs         
-    slc = append(path_curr, ...
-                 strrep(fileList.folder, path_main, ''),filesep);
-    sfn=[fileList.name(1:end-4),adds_appx,type];
-    if ~exist(slc,'dir')
-        mkdir(slc);
-    end
-    if      type == ".mat"
-        save(fullfile(slc,sfn),'-struct','data');
-    elseif  type == ".edf"
-        pop_writeeeg(data,[slc,sfn],'TYPE','EDF');
-    elseif  type == ".set"
-        EEG = pop_saveset( data, 'filename',sfn,'filepath',slc);
-    end
-    save_logs(end+1,1) = string([slc,sfn]);
-    disp(['Saved ',slc,sfn,'.'])
-end
-%% Error handling function - unclutterring main script
-function ErrorLog(errno, instc)
-    global debg_logs
-    error_list = {'ERROR: No files exist in specified location that match criteria.',...
-                  'ERROR: No markers exist in the specified file. Logged, continuing as fullfile.',...
-                  'ERROR: Only a single marker exists in the specified file. Logged, continuing as fullfile.',...
-                  'ERROR: Segment length smaller than expected. Logged, continuing with remainder of the file.',...
-                  'ERROR: EDF file could not be loaded.',...
-                  'ERROR: User specified marker channel index is out of bounds. Check data dimensions.',...
-                  'ERROR: Please provide valid variable value. Refer to user instructions when needed.'
-                 };
-    error = [error_list{errno},' @ ',char(instc)];
-    disp(error)
-    debg_logs = [debg_logs;string(error)];
-    return 
-end
