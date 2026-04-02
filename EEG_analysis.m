@@ -53,6 +53,11 @@ defaults.ersp_freqs     = [2, 50];      % Frequency range
 defaults.ersp_cycles    = [3, 0.5];     % Wavelet cycles [min, factor]
 defaults.epoch_thresh   = 100;          % µV threshold for rejection
 
+defaults.id_pattern = '(TBI\d{3}|TRE\d{3})';
+defaults.group_aliases = containers.Map(...
+    {'impaired','maintained','healthy'}, ...
+    {'low_performers','normal_performers','healthy_controls'});
+
 % ROI definitions (empty = all channels)
 defaults.rois = struct();
 
@@ -109,7 +114,7 @@ for fileIdx = 1:nFiles
     try
         %% Load data
         EEG = pop_loadset('filename', filename, 'filepath', filepath);
-        [subjectID, groupName] = extractMetadata(filename, filepath);
+        [subjectID, groupName] = extractMetadata(filename, filepath, settings);
         
         logEntry.SubjectID = subjectID;
         logEntry.Group = groupName;
@@ -258,31 +263,61 @@ function merged = mergeStructs(defaults, overrides)
     end
 end
 
-function [subjectID, groupName] = extractMetadata(filename, filepath)
-    tokens = regexp(filename, '(TBI\d{3}|TRE\d{3})', 'match');
-    if isempty(tokens)
-        tokens = regexp(filepath, '(TBI\d{3}|TRE\d{3})', 'match');
+function [subjectID, groupName] = extractMetadata(filename, filepath, settings)
+    arguments
+        filename    (1,1) string
+        filepath    (1,1) string
+        settings    (1,1) struct = struct()
     end
-    subjectID = 'UNKNOWN';
-    if ~isempty(tokens), subjectID = tokens{1}; end
+
+    %% --- Subject ID ---
+    [~, stem, ~] = fileparts(filename);
+    % 1. Lookup regex
+    if isfield(settings, 'id_pattern')
+        tokens = regexp(stem, settings.id_pattern, 'match');
+        if isempty(tokens)
+            tokens = regexp(filepath, settings.id_pattern, 'match');
+        end
+        subjectID = ifelse(~isempty(tokens), tokens{1}, char(stem));
+    % 2. Fallback default: filename stem
+    else
+        subjectID = char(stem);
+    end
     
-    groupPatterns = {'low_performers', 'normal_performers', 'healthy_controls', ...
-                     'impaired', 'maintained', 'healthy'};
+    %% --- Group ---
     groupName = 'unknown';
-    for i = 1:length(groupPatterns)
-        if contains(filepath, groupPatterns{i})
-            groupName = groupPatterns{i};
-            break;
+    
+    % 1. Lookup table
+    if isfield(settings, 'group_lookup') ...
+       && isa(settings.group_lookup, 'containers.Map')
+        if isKey(settings.group_lookup, subjectID)
+            groupName = settings.group_lookup(subjectID);
         end
     end
     
-    groupMap = containers.Map(...
-        {'impaired', 'maintained', 'healthy'}, ...
-        {'low_performers', 'normal_performers', 'healthy_controls'});
-    if groupMap.isKey(groupName)
-        groupName = groupMap(groupName);
+    % 2. Folder-based fallback
+    if strcmp(groupName, 'unknown')
+        [~, parentFolder] = fileparts(filepath);
+        if ~isempty(parentFolder)
+            groupName = char(parentFolder);
+        end
+    end
+    
+    % 3. Normalize aliases
+    if isfield(settings, 'group_aliases') ...
+       && isa(settings.group_aliases, 'containers.Map')
+        if isKey(settings.group_aliases, groupName)
+            groupName = settings.group_aliases(groupName);
+        end
+    end
+    
+    if strcmp(groupName, 'unknown')
+        warning('extractMetadata:noGroup', ...
+            'No group resolved for "%s" (path: %s)', subjectID, filepath);
     end
 end
+
+function out = ifelse(cond, a, b), if cond, out = a; else, out = b; end;end
 
 function [markerIdx, latencies] = findTaskMarkers(EEG, taskNames)
     nTasks = length(taskNames);

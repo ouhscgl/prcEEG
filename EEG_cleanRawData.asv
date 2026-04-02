@@ -21,7 +21,7 @@ arguments
                                              'nback_1a', 'nback_0b', ...
                                              'nback_2a'}
     options.TaskDuration    (1,1) double  = 64
-    options.PerfTaskMap      (1,1) struct  = struct('eyes_open', '')
+    options.PerfTaskMap      (1,1) struct  = struct('eyes_open', '','eyes_')
     options.UseFixedInterval (1,1) logical = false
     options.FixedInterval    (1,1) double  = 2
     options.ASRBurstCrit    (1,1) double  = 20
