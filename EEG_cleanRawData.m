@@ -1,5 +1,8 @@
 function EEG_cleanRawData(options)
-%EEG_CLEANRAWDATA Preprocess raw EEG data using modified PREP pipeline
+% Preprocess raw EEG data using modified PREP pipeline
+% Bigdely-Shamlo N, Mullen T, Kothe C, Su K-M and Robbins KA (2015) 
+% The PREP pipeline:standardized preprocessing for large-scale EEG analysis
+% Front. Neuroinform. 9:16. doi: 10.3389/fninf.2015.00016
 
 arguments
     options.InputDir        (1,1) string
@@ -20,15 +23,17 @@ arguments
     options.TaskNames       (1,:) cell    = {'eyes_open','nback_0a', ...
                                              'nback_1a', 'nback_0b', ...
                                              'nback_2a'}
-    options.TaskDuration    (1,1) double  = 64
-    options.PerfTaskMap      (1,1) struct  = struct('eyes_open', '')
-    options.UseFixedInterval (1,1) logical = false
-    options.FixedInterval    (1,1) double  = 2
+    options.TaskDuration    (1,1) double  = 72
+    options.PerfTaskMap     (1,1) struct  = struct('eyes_open', '')
+    options.UseFixedInterval (1,1) logical= false
+    options.FixedInterval   (1,1) double  = 2
     options.ASRBurstCrit    (1,1) double  = 20
     options.ICAThreshold    (1,1) double  = 0.8
     options.Overwrite       (1,1) logical = false
     options.FileExtension   (1,1) string  = "hdf5"
     options.SaveFigures     (1,1) logical = true
+    options.MarkerDict      (1,1) struct  = struct()
+    options.Force           (1,1) logical = false
 end
 
 disp('___________________________________________________________________')
@@ -78,6 +83,11 @@ for leaf = 1:length(leafDirs)
     end
 end
 
+fileList(idx).subject = metadata.subject;
+if isempty(fileList(idx).subject)
+    [~, fileList(idx).subject] = fileparts(fileList(idx).filename);
+end
+
 fprintf('       → Found %d EEG files to process\n', length(fileList));
 if isempty(fileList), warning('No EEG files found. Exiting.'); return; end
 
@@ -104,6 +114,13 @@ for fileIdx = 1:nFiles
     outputFile = fullfile(fileList(fileIdx).outputpath, [baseName '.set']);
     
     if exist(outputFile, 'file') && ~options.Overwrite
+        if options.Force
+            fprintf('       → Skipping (file exists, Force enabled)\n');
+            logEntry.Status = 'Skipped';
+            logEntry.Notes = 'Output exists - no overwrite (Force)';
+            logEntries{end+1} = logEntry; %#ok<AGROW>
+            continue;
+        end
         response = input(sprintf(['File exists: %s\nOverwrite? ' ...
                                   '[y]/n/f(abort all): '],outputFile),'s');
         if strcmpi(response, 'f')
@@ -171,10 +188,37 @@ for fileIdx = 1:nFiles
             logEntry.OrigMarkerLatencies = '[]';
         end
         
-        %-- Check if markers need correction
-        if isempty(EEG.event) || length(EEG.event) ~= nTasks
+        %-- Check MarkerDict for predefined markers (auto-assignment)
+        dictKey = matlab.lang.makeValidName(baseName);
+        useDict = isfield(options.MarkerDict, dictKey);
+
+        if useDict
+            % Auto-assign markers from dictionary entry (no UI)
+            latencies = options.MarkerDict.(dictKey);
+            if numel(latencies) ~= nTasks
+                warning(['MarkerDict entry for "%s" has %d latencies '...
+                         'but expected %d (nTasks).'], dictKey, ...
+                         numel(latencies), nTasks);
+            end
+            fprintf('       → Using MarkerDict entry (%d markers)\n',...
+                    numel(latencies));
+            EEG = applyMarkerDict(EEG, latencies, options.TaskNames, ...
+                                  options.TaskDuration);
+            [ALLEEG, EEG, CURRENTSET] = eeg_store(ALLEEG, EEG, CURRENTSET);
+            fprintf('       ✓ %d markers assigned from MarkerDict\n',...
+                    length(EEG.event));
+        elseif isempty(EEG.event) || length(EEG.event) ~= nTasks
             fprintf('       ✗ Found %d markers, expected %d\n', ...
                     length(EEG.event), nTasks);
+            if options.Force
+                fprintf(['       → Skipping (Force enabled, no '...
+                         'MarkerDict entry for "%s")\n'], dictKey);
+                logEntry.Status = 'Skipped';
+                logEntry.Notes = ['Marker count mismatch; no '...
+                                  'MarkerDict entry (Force)'];
+                logEntries{end+1} = logEntry; %#ok<AGROW>
+                continue;
+            end
             fprintf('       ☷ Opening marker editor...\n');
             EEG = customMarkerEditor(EEG, options.TaskNames);
             [ALLEEG, EEG, CURRENTSET] = eeg_store(ALLEEG, EEG, CURRENTSET);
@@ -205,6 +249,16 @@ for fileIdx = 1:nFiles
             fprintf('       ✓ %d markers validated\n', length(EEG.event));
         end
         
+        logEntry.RevisedMarkers = length(EEG.event);
+        if ~isempty(EEG.event)
+            mainEvts = EEG.event(~contains({EEG.event.type}, '_stim') & ...
+                                 ~contains({EEG.event.type}, '_task'));
+            logEntry.RevisedMarkerLatencies = num2str( ...
+                [mainEvts.latency] / EEG.srate, '%.1f ');
+        else
+            logEntry.RevisedMarkerLatencies = '[]';
+        end
+
         % [INDEV] Add intermediate markers every 2s* for all tasks
         %-- load performance data
         perfData = [];
@@ -368,27 +422,50 @@ for fileIdx = 1:nFiles
         %% STEP 9: Visualization and validation
         fprintf('[9/9]: Generating validation visualization...\n');
         
-        visualizeRawVsCleaned(EEG_raw, EEG, options.ChannelLabels,      ...
-                              round(trim_start),round(trim_end),        ...
-                              rem_chan,baseName);
-        
-        if options.SaveFigures
-            figPath = fullfile(fileList(fileIdx).outputpath, ...
-                      [baseName '_validation.png']);
-            saveas(gcf, figPath);
-            fprintf('       ✓ Validation figure saved: %s\n', figPath);
-        end
-        
-        response = input(['       Review visualization. ' ...
-                         'Continue to save? [y]/n : '], 's');
-        if strcmpi(response, 'n')
+        if options.Force
+            % Render off-screen, save if requested, no review prompt
+            if options.SaveFigures
+                prevVis = get(groot, 'DefaultFigureVisible');
+                restoreVis = onCleanup(@() set(groot, ...
+                                       'DefaultFigureVisible', prevVis));
+                set(groot, 'DefaultFigureVisible', 'off');
+                visualizeRawVsCleaned(EEG_raw, EEG,                    ...
+                                      options.ChannelLabels,            ...
+                                      round(trim_start),round(trim_end),...
+                                      rem_chan,baseName);
+                figPath = fullfile(fileList(fileIdx).outputpath, ...
+                          [baseName '_validation.png']);
+                saveas(gcf, figPath);
+                close(gcf);
+                clear restoreVis;
+                fprintf(['       ✓ Validation figure saved '...
+                         '(no review): %s\n'], figPath);
+            else
+                fprintf('       → Visualization skipped (Force)\n');
+            end
+        else
+            visualizeRawVsCleaned(EEG_raw, EEG, options.ChannelLabels, ...
+                                  round(trim_start),round(trim_end),   ...
+                                  rem_chan,baseName);
+            
+            if options.SaveFigures
+                figPath = fullfile(fileList(fileIdx).outputpath, ...
+                          [baseName '_validation.png']);
+                saveas(gcf, figPath);
+                fprintf('       ✓ Validation figure saved: %s\n', figPath);
+            end
+            
+            response = input(['       Review visualization. ' ...
+                             'Continue to save? [y]/n : '], 's');
+            if strcmpi(response, 'n')
+                close(gcf);
+                logEntry.Status = 'Rejected';
+                logEntry.Notes = 'User rejected after visual review';
+                logEntries{end+1} = logEntry; %#ok<AGROW>
+                continue;
+            end
             close(gcf);
-            logEntry.Status = 'Rejected';
-            logEntry.Notes = 'User rejected after visual review';
-            logEntries{end+1} = logEntry; %#ok<AGROW>
-            continue;
         end
-        close(gcf);
         
         %% Save
         output_path = char(fileList(fileIdx).outputpath);
@@ -449,6 +526,8 @@ function logEntry = initLogEntry(fileInfo)
     logEntry.ResampledTo = 0;
     logEntry.OrigMarkers = 0;
     logEntry.OrigMarkerLatencies = '';
+    logEntry.RevisedMarkers = 0;
+    logEntry.RevisedMarkerLatencies = '';
     logEntry.TrimStart = 0;
     logEntry.TrimEnd = 0;
     logEntry.TrimmedDuration = 0;
@@ -460,6 +539,49 @@ function logEntry = initLogEntry(fileInfo)
     logEntry.FinalChannels = 0;
     logEntry.FinalDuration = 0;
     logEntry.Notes = '';
+end
+
+function EEG = applyMarkerDict(EEG, latencies_s, taskNames, taskDuration)
+%APPLYMARKERDICT Replace EEG.event with markers from a MarkerDict entry
+%
+%   Inputs:
+%       EEG          - EEGLAB dataset
+%       latencies_s  - Numeric vector of marker latencies in seconds
+%       taskNames    - Cell array of task type names (one per latency)
+%       taskDuration - Duration in seconds applied to every event
+%
+%   Notes:
+%       Marker count is truncated to min(numel(latencies_s),
+%       numel(taskNames)) so partial dict entries do not error out.
+
+    n = min(numel(latencies_s), numel(taskNames));
+    
+    if ~isempty(EEG.event)
+        templateEvent = EEG.event(1);
+    else
+        templateEvent = struct('type', '', 'latency', 0, 'duration', 0);
+    end
+    
+    % Reset template fields to neutral values
+    fields = fieldnames(templateEvent);
+    for f = 1:length(fields)
+        v = templateEvent.(fields{f});
+        if isnumeric(v)
+            templateEvent.(fields{f}) = 0;
+        elseif ischar(v) || isstring(v)
+            templateEvent.(fields{f}) = '';
+        end
+    end
+    
+    newEvents = repmat(templateEvent, 1, n);
+    for k = 1:n
+        newEvents(k).latency  = latencies_s(k) * EEG.srate;
+        newEvents(k).type     = taskNames{k};
+        newEvents(k).duration = taskDuration * EEG.srate;
+    end
+    
+    EEG.event = newEvents;
+    EEG = eeg_checkset(EEG, 'eventconsistency');
 end
 
 function perfData = loadPerformanceFile(perfDir, subjectID)
@@ -475,7 +597,7 @@ function perfData = loadPerformanceFile(perfDir, subjectID)
     end
     
     % Hardcoded file pattern
-    searchPattern = fullfile(perfDir, '**', '*_COG.csv');
+    searchPattern = fullfile(perfDir, '**', '*.csv');
     files = dir(searchPattern);
     
     if isempty(files)

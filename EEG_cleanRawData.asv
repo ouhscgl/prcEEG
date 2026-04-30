@@ -1,5 +1,8 @@
 function EEG_cleanRawData(options)
-%EEG_CLEANRAWDATA Preprocess raw EEG data using modified PREP pipeline
+% Preprocess raw EEG data using modified PREP pipeline
+% Bigdely-Shamlo N, Mullen T, Kothe C, Su K-M and Robbins KA (2015) 
+% The PREP pipeline:standardized preprocessing for large-scale EEG analysis
+% Front. Neuroinform. 9:16. doi: 10.3389/fninf.2015.00016
 
 arguments
     options.InputDir        (1,1) string
@@ -20,10 +23,10 @@ arguments
     options.TaskNames       (1,:) cell    = {'eyes_open','nback_0a', ...
                                              'nback_1a', 'nback_0b', ...
                                              'nback_2a'}
-    options.TaskDuration    (1,1) double  = 64
-    options.PerfTaskMap      (1,1) struct  = struct('eyes_open', '','eyes_')
-    options.UseFixedInterval (1,1) logical = false
-    options.FixedInterval    (1,1) double  = 2
+    options.TaskDuration    (1,1) double  = 72
+    options.PerfTaskMap     (1,1) struct  = struct('eyes_open', '')
+    options.UseFixedInterval (1,1) logical= false
+    options.FixedInterval   (1,1) double  = 2
     options.ASRBurstCrit    (1,1) double  = 20
     options.ICAThreshold    (1,1) double  = 0.8
     options.Overwrite       (1,1) logical = false
@@ -77,6 +80,8 @@ for leaf = 1:length(leafDirs)
         fileList(idx).outputpath = fullfile(options.OutputDir, relPath);
     end
 end
+if isempty(fileList(idx).subject)
+    fileList(idx).subject = 
 
 fprintf('       → Found %d EEG files to process\n', length(fileList));
 if isempty(fileList), warning('No EEG files found. Exiting.'); return; end
@@ -205,6 +210,16 @@ for fileIdx = 1:nFiles
             fprintf('       ✓ %d markers validated\n', length(EEG.event));
         end
         
+        logEntry.RevisedMarkers = length(EEG.event);
+        if ~isempty(EEG.event)
+            mainEvts = EEG.event(~contains({EEG.event.type}, '_stim') & ...
+                                 ~contains({EEG.event.type}, '_task'));
+            logEntry.RevisedMarkerLatencies = num2str( ...
+                [mainEvts.latency] / EEG.srate, '%.1f ');
+        else
+            logEntry.RevisedMarkerLatencies = '[]';
+        end
+
         % [INDEV] Add intermediate markers every 2s* for all tasks
         %-- load performance data
         perfData = [];
@@ -449,6 +464,8 @@ function logEntry = initLogEntry(fileInfo)
     logEntry.ResampledTo = 0;
     logEntry.OrigMarkers = 0;
     logEntry.OrigMarkerLatencies = '';
+    logEntry.RevisedMarkers = 0;
+    logEntry.RevisedMarkerLatencies = '';
     logEntry.TrimStart = 0;
     logEntry.TrimEnd = 0;
     logEntry.TrimmedDuration = 0;
@@ -475,7 +492,7 @@ function perfData = loadPerformanceFile(perfDir, subjectID)
     end
     
     % Hardcoded file pattern
-    searchPattern = fullfile(perfDir, '**', '*_COG.csv');
+    searchPattern = fullfile(perfDir, '**', '*.csv');
     files = dir(searchPattern);
     
     if isempty(files)
